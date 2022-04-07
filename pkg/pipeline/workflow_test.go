@@ -284,7 +284,6 @@ func TestStopWorkflowRun(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 10)
 
-
 	wf.runtime.entryPoints["data_preprocess"].done = true
 	wf.runtime.entryPoints["main"].done = true
 	wf.runtime.entryPoints["validate"].done = true
@@ -769,7 +768,6 @@ func TestRestartWorkflow(t *testing.T) {
 	}
 	postProcessView := map[string]schema.JobView{}
 
-
 	err = wf.SetWorkflowRuntime(runtimeView, postProcessView)
 
 	assert.Nil(t, err)
@@ -827,5 +825,5 @@ func TestCheckPostProcess(t *testing.T) {
 	bwf := NewBaseWorkflow(wfs, "", "", nil, extra)
 	err = bwf.validate()
 	assert.NotNil(t, err)
-	assert.Equal(t, "failure strategy should be [fail_fast] or [continue]", err.Error())
+	assert.Equal(t, "post_process can only has 1 step at most", err.Error())
 }
