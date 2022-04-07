@@ -39,7 +39,8 @@ const (
 	runWrongParamYamlPath string = "./testcase/runWrongParam.yaml"
 	runCircleYamlPath     string = "./testcase/runCircle.yaml"
 
-	runTwoPostPath string = "./testcase/runTwoPost.yaml"
+	runTwoPostPath     string = "./testcase/runTwoPost.yaml"
+	runPostProcessPath string = "./testcase/run_process.yaml"
 )
 
 var mockCbs = WorkflowCallbacks{
@@ -816,7 +817,6 @@ func TestRestartWorkflow_from1completed(t *testing.T) {
 }
 
 func TestCheckPostProcess(t *testing.T) {
-	db_fake.InitFakeDB()
 	testCase := loadcase(runTwoPostPath)
 	wfs, err := schema.ParseWorkflowSource([]byte(testCase))
 	assert.Nil(t, err)
@@ -826,4 +826,13 @@ func TestCheckPostProcess(t *testing.T) {
 	err = bwf.validate()
 	assert.NotNil(t, err)
 	assert.Equal(t, "post_process can only has 1 step at most", err.Error())
+
+	testCase = loadcase(runPostProcessPath)
+	wfs, err = schema.ParseWorkflowSource([]byte(testCase))
+	assert.Nil(t, err)
+
+	extra = GetExtra()
+	bwf = NewBaseWorkflow(wfs, "", "", nil, extra)
+	err = bwf.validate()
+	assert.Nil(t, err)
 }
