@@ -457,7 +457,7 @@ func TestCheckCached(t *testing.T) {
 	assert.Equal(t, true, cacheFound)
 }
 
-func ttttTestPFRUNTIME(t *testing.T) {
+func TestPFRUNTIME(t *testing.T) {
 	testCase := loadcase("./testcase/run_process.yaml")
 	wfs, err := schema.ParseWorkflowSource([]byte(testCase))
 	assert.Nil(t, err)
