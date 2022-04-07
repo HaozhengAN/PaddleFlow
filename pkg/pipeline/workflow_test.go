@@ -38,6 +38,8 @@ const (
 	noAtfYamlPath         string = "./testcase/runNoAtf.yaml"
 	runWrongParamYamlPath string = "./testcase/runWrongParam.yaml"
 	runCircleYamlPath     string = "./testcase/runCircle.yaml"
+
+	runTwoPostPath string = "./testcase/runTwoPost.yaml"
 )
 
 var mockCbs = WorkflowCallbacks{
@@ -794,4 +796,17 @@ func TestRestartWorkflow_from1completed(t *testing.T) {
 	assert.Equal(t, false, wf.runtime.entryPoints["main"].submitted)
 	assert.Equal(t, false, wf.runtime.entryPoints["validate"].done)
 	assert.Equal(t, false, wf.runtime.entryPoints["validate"].submitted)
+}
+
+func TestCheckPostProcess(t *testing.T) {
+	db_fake.InitFakeDB()
+	testCase := loadcase(runTwoPostPath)
+	wfs, err := schema.ParseWorkflowSource([]byte(testCase))
+	assert.Nil(t, err)
+
+	extra := GetExtra()
+	bwf := NewBaseWorkflow(wfs, "", "", nil, extra)
+	err = bwf.validate()
+	assert.NotNil(t, err)
+	assert.Equal(t, "failure strategy should be [fail_fast] or [continue]", err.Error())
 }
