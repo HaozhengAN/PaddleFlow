@@ -184,8 +184,13 @@ func TestCreateNewWorkflowRun_success(t *testing.T) {
 	defer patches.Reset()
 
 	time.Sleep(time.Millisecond * 10)
+
+	wf.runtime.entryPoints["data_preprocess"].job.(*PaddleFlowJob).Status = schema.StatusJobSucceeded
 	wf.runtime.entryPoints["data_preprocess"].done = true
+	wf.runtime.entryPoints["main"].job.(*PaddleFlowJob).Status = schema.StatusJobSucceeded
 	wf.runtime.entryPoints["main"].done = true
+	wf.runtime.entryPoints["validate"].job.(*PaddleFlowJob).Status = schema.StatusJobSucceeded
+
 	wf.runtime.entryPoints["validate"].done = true
 
 	go wf.Start()
@@ -228,6 +233,10 @@ func TestCreateNewWorkflowRun_failed(t *testing.T) {
 	defer patch3.Reset()
 	defer patch4.Reset()
 	defer patch5.Reset()
+
+	wf.runtime.entryPoints["data_preprocess"].job.(*PaddleFlowJob).Status = schema.StatusJobFailed
+	wf.runtime.entryPoints["main"].job.(*PaddleFlowJob).Status = schema.StatusJobCancelled
+	wf.runtime.entryPoints["validate"].job.(*PaddleFlowJob).Status = schema.StatusJobCancelled
 
 	go wf.Start()
 	time.Sleep(time.Millisecond * 10)
@@ -274,9 +283,15 @@ func TestStopWorkflowRun(t *testing.T) {
 	defer patch5.Reset()
 
 	time.Sleep(time.Millisecond * 10)
+
+
 	wf.runtime.entryPoints["data_preprocess"].done = true
 	wf.runtime.entryPoints["main"].done = true
 	wf.runtime.entryPoints["validate"].done = true
+
+	wf.runtime.entryPoints["data_preprocess"].job.(*PaddleFlowJob).Status = schema.StatusJobSucceeded
+	wf.runtime.entryPoints["main"].job.(*PaddleFlowJob).Status = schema.StatusJobSucceeded
+	wf.runtime.entryPoints["validate"].job.(*PaddleFlowJob).Status = schema.StatusJobTerminated
 
 	go wf.Start()
 	time.Sleep(time.Millisecond * 10)
@@ -754,7 +769,9 @@ func TestRestartWorkflow(t *testing.T) {
 	}
 	postProcessView := map[string]schema.JobView{}
 
+
 	err = wf.SetWorkflowRuntime(runtimeView, postProcessView)
+
 	assert.Nil(t, err)
 	assert.Equal(t, true, wf.runtime.entryPoints["data_preprocess"].done)
 	assert.Equal(t, true, wf.runtime.entryPoints["data_preprocess"].submitted)
@@ -786,9 +803,11 @@ func TestRestartWorkflow_from1completed(t *testing.T) {
 			JobID: "",
 		},
 	}
+
 	postProcessView := map[string]schema.JobView{}
 
 	err = wf.SetWorkflowRuntime(runtimeView, postProcessView)
+
 	assert.Nil(t, err)
 	assert.Equal(t, true, wf.runtime.entryPoints["data_preprocess"].done)
 	assert.Equal(t, true, wf.runtime.entryPoints["data_preprocess"].submitted)
