@@ -141,7 +141,6 @@ func TestUpdateJob(t *testing.T) {
 
 		st.NodeType = common.NodeTypeEntrypoint
 
-
 		forCacheFingerprint := false
 		err := st.updateJob(forCacheFingerprint, nil)
 		assert.Nil(t, err)
@@ -245,7 +244,6 @@ func TestUpdateJobWithCache(t *testing.T) {
 		st := wf.runtime.entryPoints[stepName]
 
 		st.NodeType = common.NodeTypeEntrypoint
-
 
 		forCacheFingerprint := false
 		if stepName == "data_preprocess" {
@@ -459,7 +457,7 @@ func TestCheckCached(t *testing.T) {
 	assert.Equal(t, true, cacheFound)
 }
 
-func TestPFRUNTIME(t *testing.T) {
+func ttttTestPFRUNTIME(t *testing.T) {
 	testCase := loadcase("./testcase/run_process.yaml")
 	wfs, err := schema.ParseWorkflowSource([]byte(testCase))
 	assert.Nil(t, err)
