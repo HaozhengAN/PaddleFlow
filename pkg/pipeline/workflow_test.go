@@ -40,7 +40,7 @@ const (
 	runCircleYamlPath     string = "./testcase/runCircle.yaml"
 
 	runTwoPostPath     string = "./testcase/runTwoPost.yaml"
-	runPostProcessPath string = "./testcase/run_process.yaml"
+	runPostProcessPath string = "./testcase/runPostProcess.yaml"
 )
 
 var mockCbs = WorkflowCallbacks{
@@ -113,7 +113,7 @@ func TestNewBaseWorkflowWithCircle(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
-// 测试带环流程
+// 测试无环流程
 func TestTopologicalSort_noCircle(t *testing.T) {
 	testCase := loadcase(runYamlPath)
 	wfs, err := schema.ParseWorkflowSource([]byte(testCase))
