@@ -124,10 +124,20 @@ func (rj *RunJob) Encode() error {
 
 	parametersJson, err := json.Marshal(rj.Parameters)
 	if err != nil {
-		logger.Logger().Errorf("encode run job cache failed. error:%v", err)
+		logger.Logger().Errorf("encode run job parameters failed. error:%v", err)
 		return err
 	}
 	rj.ParametersJson = string(parametersJson)
+
+	activatedAt := sql.NullTime{}
+	activatedAt.Time, err = time.ParseInLocation("2006-01-02 15:04:05", rj.ActivateTime, time.Local)
+	activatedAt.Valid = true
+	if err != nil {
+		logger.Logger().Errorf("encode run job activateTime failed. error: %v", err)
+		return err
+	}
+	rj.ActivatedAt = activatedAt
+
 	return nil
 }
 
@@ -204,13 +214,14 @@ func ParseRunJob(jobView *schema.JobView) RunJob {
 	}
 
 	return RunJob{
-		Command:    jobView.Command,
-		Parameters: newParameters,
-		Artifacts:  jobView.Artifacts,
-		DockerEnv:  jobView.DockerEnv,
-		Status:     jobView.Status,
-		Message:    jobView.JobMessage,
-		Cache:      jobView.Cache,
-		CacheRunID: jobView.CacheRunID,
+		Command:      jobView.Command,
+		Parameters:   newParameters,
+		Artifacts:    jobView.Artifacts,
+		DockerEnv:    jobView.DockerEnv,
+		Status:       jobView.Status,
+		Message:      jobView.JobMessage,
+		Cache:        jobView.Cache,
+		CacheRunID:   jobView.CacheRunID,
+		ActivateTime: jobView.StartTime,
 	}
 }

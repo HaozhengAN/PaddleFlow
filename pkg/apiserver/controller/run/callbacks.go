@@ -194,6 +194,7 @@ func updateRunJobs(jobs map[string]schema.JobView) error {
 	logging := logger.Logger()
 	for _, job := range jobs {
 		runJob := models.ParseRunJob(&job)
+		runJob.Encode()
 		if err := models.UpdateRunJob(logging, job.JobID, runJob); err != nil {
 			return err
 		}
