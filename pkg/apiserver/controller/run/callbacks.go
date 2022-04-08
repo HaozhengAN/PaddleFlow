@@ -298,5 +298,5 @@ func startWfWithImageUrl(runID, imageUrl string) error {
 	logEntry.Debugf("workflow started after image handling. run: %+v", run)
 	// update run's imageUrl
 	return models.UpdateRun(logger.LoggerForRun(run.ID), run.ID,
-		models.Run{ImageUrl: run.WorkflowSource.DockerEnv, Status: common.StatusRunPending})
+		models.Run{DockerEnv: run.WorkflowSource.DockerEnv, Status: common.StatusRunPending})
 }

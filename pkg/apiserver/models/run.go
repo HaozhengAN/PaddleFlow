@@ -48,7 +48,7 @@ type Run struct {
 	Runtime        schema.RuntimeView     `gorm:"-"                                 json:"runtime"`
 	PostProcess    schema.PostProcessView `gorm:"-"                                 json:"postProcess"`
 	FailureOptions schema.FailureOptions  `gorm:"-"                                 json:"failureOptions"`
-	ImageUrl       string                 `gorm:"type:varchar(128)"                 json:"imageUrl"`
+	DockerEnv      string                 `gorm:"type:varchar(128)"                 json:"dockerEnv"`
 	Entry          string                 `gorm:"type:varchar(256)"                 json:"entry"`
 	Disabled       string                 `gorm:"type:text;size:65535"              json:"disabled"`
 	Message        string                 `gorm:"type:text;size:65535"              json:"runMsg"`
