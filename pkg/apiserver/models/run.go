@@ -100,6 +100,8 @@ func (r *Run) decode() error {
 	}
 	r.WorkflowSource = workflowSource
 
+	r.validateFailureOptions()
+
 	// 由于在所有获取Run的函数中，都需要进行decode，因此Runtime和PostProcess的赋值也在decode中进行
 	if err := r.validateRuntimeAndPostProcess(); err != nil {
 		return err
@@ -121,6 +123,12 @@ func (r *Run) decode() error {
 		r.ActivateTime = r.ActivatedAt.Time.Format("2006-01-02 15:04:05")
 	}
 	return nil
+}
+
+func (r *Run) validateFailureOptions() {
+	if r.FailureOptions.Strategy == "" {
+		r.FailureOptions.Strategy = schema.FailureStrategyFailFast
+	}
 }
 
 // validate runtime and postProcess
