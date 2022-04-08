@@ -151,7 +151,7 @@ func (r *Run) validateRuntimeAndPostProcess() error {
 			r.PostProcess[job.StepName] = jobView
 		} else if step, ok := r.WorkflowSource.EntryPoints[job.StepName]; ok {
 			jobView := job.ParseJobView(step)
-			r.PostProcess[job.StepName] = jobView
+			r.Runtime[job.StepName] = jobView
 		} else {
 			return fmt.Errorf("cannot find step[%s] in either entry_points or post_process", job.StepName)
 		}
