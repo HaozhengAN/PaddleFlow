@@ -126,7 +126,7 @@ func (r *Run) decode() error {
 }
 
 func (r *Run) validateFailureOptions() {
-	if r.FailureOptions.Strategy == "" {
+	if r.WorkflowSource.FailureOptions.Strategy == "" && r.FailureOptions.Strategy == "" {
 		r.FailureOptions.Strategy = schema.FailureStrategyFailFast
 	}
 }
@@ -144,25 +144,16 @@ func (r *Run) validateRuntimeAndPostProcess() error {
 	if err != nil {
 		return err
 	}
-	postStepNameList := []string{}
-	for name := range r.WorkflowSource.PostProcess {
-		postStepNameList = append(postStepNameList, name)
-	}
 	// 将所有run_job转换成JobView之后，赋值给Runtime和PostProcess
 	for _, job := range runJobs {
-		isPost := false
-		for _, name := range postStepNameList {
-			if name == job.Name {
-				isPost = true
-				break
-			}
-		}
-		if isPost {
-			jobView := job.ParseJobView(r.WorkflowSource.PostProcess[job.StepName])
+		if step, ok := r.WorkflowSource.PostProcess[job.StepName]; ok {
+			jobView := job.ParseJobView(step)
+			r.PostProcess[job.StepName] = jobView
+		} else if step, ok := r.WorkflowSource.EntryPoints[job.StepName]; ok {
+			jobView := job.ParseJobView(step)
 			r.PostProcess[job.StepName] = jobView
 		} else {
-			jobView := job.ParseJobView(r.WorkflowSource.EntryPoints[job.StepName])
-			r.Runtime[job.StepName] = jobView
+			return fmt.Errorf("cannot find step[%s] in either entry_points or post_process", job.StepName)
 		}
 	}
 	return nil
