@@ -190,12 +190,12 @@ func UpdateRunByWfEvent(id string, event interface{}) bool {
 	return true
 }
 
-func updateRunJobs(jobs map[string]schema.JobView) error {
+func updateRunJobs(runID string, jobs map[string]schema.JobView) error {
 	logging := logger.Logger()
 	for name, job := range jobs {
 		runJob := models.ParseRunJob(&job)
 		runJob.Encode()
-		if err := models.UpdateRunJob(logging, job.JobID, name, runJob); err != nil {
+		if err := models.UpdateRunJob(logging, runID, name, runJob); err != nil {
 			return err
 		}
 	}
