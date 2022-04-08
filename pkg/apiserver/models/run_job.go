@@ -56,7 +56,6 @@ type RunJob struct {
 }
 
 func CreateRunJobs(logEntry *log.Entry, jobs map[string]schema.JobView, runID string) error {
-	// 暂时没有被调用，当前run_job记录的创建逻辑和run记录的创建逻辑捆绑在一起
 	logEntry.Debugf("begin create run_jobs by jobMap: %v", jobs)
 	err := withTransaction(database.DB, func(tx *gorm.DB) error {
 		for name, job := range jobs {
@@ -78,12 +77,12 @@ func CreateRunJobs(logEntry *log.Entry, jobs map[string]schema.JobView, runID st
 	return err
 }
 
-func UpdateRunJob(logEntry *log.Entry, runJobID string, runJob RunJob) error {
-	logEntry.Debugf("begin update run_job. run_job ID: %s", runJobID)
-	tx := database.DB.Model(&RunJob{}).Where("id = ?", runJobID).Updates(runJob)
+func UpdateRunJob(logEntry *log.Entry, runID string, stepName string, runJob RunJob) error {
+	logEntry.Debugf("begin update run_job. run_job run_id: %s, step_name: %s", runID, stepName)
+	tx := database.DB.Model(&RunJob{}).Where("run_id = ?", runID).Where("step_name = ?", stepName).Updates(runJob)
 	if tx.Error != nil {
-		logEntry.Errorf("update run_job failed. runJobID: %s, error: %s",
-			runJobID, tx.Error.Error())
+		logEntry.Errorf("update run_job failed. run_id: [%s], step_name: [%s], error: %s",
+			runID, stepName, tx.Error.Error())
 		return tx.Error
 	}
 	return nil
@@ -129,14 +128,16 @@ func (rj *RunJob) Encode() error {
 	}
 	rj.ParametersJson = string(parametersJson)
 
-	activatedAt := sql.NullTime{}
-	activatedAt.Time, err = time.ParseInLocation("2006-01-02 15:04:05", rj.ActivateTime, time.Local)
-	activatedAt.Valid = true
-	if err != nil {
-		logger.Logger().Errorf("encode run job activateTime failed. error: %v", err)
-		return err
+	if rj.ActivateTime != "" {
+		activatedAt := sql.NullTime{}
+		activatedAt.Time, err = time.ParseInLocation("2006-01-02 15:04:05", rj.ActivateTime, time.Local)
+		activatedAt.Valid = true
+		if err != nil {
+			logger.Logger().Errorf("encode run job activateTime failed. error: %v", err)
+			return err
+		}
+		rj.ActivatedAt = activatedAt
 	}
-	rj.ActivatedAt = activatedAt
 
 	return nil
 }
