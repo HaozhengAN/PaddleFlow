@@ -173,7 +173,7 @@ func UpdateRunByWfEvent(id string, event interface{}) bool {
 		}
 	}
 
-	if err := updateRunJobs(runtimeJobs); err != nil {
+	if err := updateRunJobs(id, runtimeJobs); err != nil {
 		logging.Errorf("run[%s] update run_job failed. error: %v", id, err)
 		return false
 	}
