@@ -215,6 +215,8 @@ func ParseRunJob(jobView *schema.JobView) RunJob {
 	}
 
 	return RunJob{
+		ID:           jobView.JobID,
+		Name:         jobView.JobName,
 		Command:      jobView.Command,
 		Parameters:   newParameters,
 		Artifacts:    jobView.Artifacts,
