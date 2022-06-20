@@ -18,8 +18,6 @@ package schema
 
 import (
 	"fmt"
-	"reflect"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v2"
@@ -60,14 +58,29 @@ func (atf *Artifacts) ValidateOutputMapByList() error {
 	return nil
 }
 
+type Component interface {
+	GetDeps() []string
+	GetArtifacts() Artifacts
+	GetParameters() map[string]interface{}
+	GetCondition() string
+	GetLoopArgument() interface{}
+
+	// 下面几个Update 函数在进行模板替换的时候会用到
+	UpdateCondition(string)
+	UpdateLoopArguemt(interface{})
+}
+
 type WorkflowSourceStep struct {
-	Parameters map[string]interface{} `yaml:"parameters"`
-	Command    string                 `yaml:"command"`
-	Deps       string                 `yaml:"deps"`
-	Artifacts  Artifacts              `yaml:"artifacts"`
-	Env        map[string]string      `yaml:"env"`
-	DockerEnv  string                 `yaml:"docker_env"`
-	Cache      Cache                  `yaml:"cache"`
+	LoopArgument interface{}            `yaml:"loop_argument"`
+	Condition    string                 `yaml:"condition"`
+	Parameters   map[string]interface{} `yaml:"parameters"`
+	Command      string                 `yaml:"command"`
+	Deps         string                 `yaml:"deps"`
+	Artifacts    Artifacts              `yaml:"artifacts"`
+	Env          map[string]string      `yaml:"env"`
+	DockerEnv    string                 `yaml:"docker_env"`
+	Cache        Cache                  `yaml:"cache"`
+	Reference    string                 `yaml:"referenc"`
 }
 
 func (s *WorkflowSourceStep) GetDeps() []string {
@@ -83,6 +96,81 @@ func (s *WorkflowSourceStep) GetDeps() []string {
 	return deps
 }
 
+func (s *WorkflowSourceStep) GetArtifacts() Artifacts {
+	return s.Artifacts
+}
+
+func (s *WorkflowSourceStep) GetParameters() map[string]interface{} {
+	return s.Parameters
+}
+
+func (s *WorkflowSourceStep) GetCondition() string {
+	return s.Condition
+}
+
+func (s *WorkflowSourceStep) GetLoopArgument() interface{} {
+	return s.LoopArgument
+}
+
+func (s *WorkflowSourceStep) UpdateCondition(condition string) {
+	s.Condition = condition
+}
+
+func (s *WorkflowSourceStep) UpdateLoopArguemt(loopArgument interface{}) {
+	s.LoopArgument = loopArgument
+}
+
+type WorkflowSourceDag struct {
+	LoopArgument interface{}            `yaml:"loop_argument"`
+	Condition    string                 `yaml:"condition"`
+	Parameters   map[string]interface{} `yaml:"parameters"`
+	Deps         string                 `yaml:"deps"`
+	Artifacts    Artifacts              `yaml:"artifacts"`
+	EntryPoints  map[string]Component   `yaml:"entry_points"`
+}
+
+func (d *WorkflowSourceDag) GetDeps() []string {
+	// 获取依赖节点列表。添加前删除每个步骤名称前后的空格，只有空格的步骤名直接略过不添加
+	deps := make([]string, 0)
+	for _, dep := range strings.Split(d.Deps, ",") {
+		dryDep := strings.TrimSpace(dep)
+		if len(dryDep) <= 0 {
+			continue
+		}
+		deps = append(deps, dryDep)
+	}
+	return deps
+}
+
+func (d *WorkflowSourceDag) GetArtifacts() Artifacts {
+	return d.Artifacts
+}
+
+func (d *WorkflowSourceDag) GetParameters() map[string]interface{} {
+	return d.Parameters
+}
+
+func (d *WorkflowSourceDag) GetCondition() string {
+	return d.Condition
+}
+
+func (d *WorkflowSourceDag) GetLoopArgument() interface{} {
+	return d.LoopArgument
+}
+
+func (d *WorkflowSourceDag) UpdateCondition(condition string) {
+	d.Condition = condition
+}
+
+func (d *WorkflowSourceDag) UpdateLoopArguemt(loopArgument interface{}) {
+	d.LoopArgument = loopArgument
+}
+
+func (d *WorkflowSourceDag) GetSubComponet(subComponentName string) (Component, bool) {
+	sc, ok := d.EntryPoints[subComponentName]
+	return sc, ok
+}
+
 type Cache struct {
 	Enable         bool   `yaml:"enable"           json:"enable"`
 	MaxExpiredTime string `yaml:"max_expired_time" json:"maxExpiredTime"` // seconds
@@ -96,7 +184,8 @@ type FailureOptions struct {
 type WorkflowSource struct {
 	Name           string                         `yaml:"name"`
 	DockerEnv      string                         `yaml:"docker_env"`
-	EntryPoints    map[string]*WorkflowSourceStep `yaml:"entry_points"`
+	EntryPoints    WorkflowSourceDag              `yaml:"entry_points"`
+	Components     map[string]Component           `yaml:"components"`
 	Cache          Cache                          `yaml:"cache"`
 	Parallelism    int                            `yaml:"parallelism"`
 	Disabled       string                         `yaml:"disabled"`
@@ -134,30 +223,12 @@ func (wfs *WorkflowSource) IsDisabled(stepName string) (bool, error) {
 }
 
 func (wfs *WorkflowSource) HasStep(step string) bool {
-	_, ok1 := wfs.EntryPoints[step]
-	_, ok2 := wfs.PostProcess[step]
-	ok := ok1 || ok2
-	if ok {
-		return true
-	} else {
-		return false
-	}
+	return true
 }
 
 // 该函数的作用是将WorkflowSource中的Slice类型的输出Artifact改为Map类型。
 // 这样做的原因是：之前的run.yaml中（ver.1.3.2之前），输出Artifact为Map类型，而现在为了支持Cache的优化，改为Slice类型
 func (wfs *WorkflowSource) validateArtifacts() error {
-	steps, err := parseArtifactsOfSteps(wfs.EntryPoints)
-	if err != nil {
-		return err
-	}
-	wfs.EntryPoints = steps
-
-	steps, err = parseArtifactsOfSteps(wfs.PostProcess)
-	if err != nil {
-		return err
-	}
-	wfs.PostProcess = steps
 	return nil
 }
 
@@ -191,51 +262,6 @@ func runYaml2Map(runYaml []byte) (map[string]interface{}, error) {
 }
 
 func (wfs *WorkflowSource) ValidateStepCacheByMap(runMap map[string]interface{}) error {
-	for name, point := range wfs.EntryPoints {
-		// 先将全局的Cache设置赋值给该节点的Cache，下面再根据Map进行替换
-		point.Cache = wfs.Cache
-
-		// 检查用户是否有设置节点级别的Cache
-		cache, ok, err := unstructured.NestedFieldCopy(runMap, EntryPointsStr, name, "cache")
-		if err != nil {
-			return err
-		}
-		if ok {
-			cacheMap := cache.(map[string]interface{})
-			// Enable字段赋值
-			if value, ok := cacheMap[CacheAttributeEnable]; ok {
-				switch value := value.(type) {
-				case bool:
-					point.Cache.Enable = value
-				default:
-					return fmt.Errorf("cannot assign cache attribute [%s] by value[%v] with type [%s]",
-						CacheAttributeEnable, value, reflect.TypeOf(value).Name())
-				}
-			}
-			// MaxExpiredTime字段赋值
-			if value, ok := cacheMap[CacheAttributeMaxExpiredTime]; ok {
-				switch value := value.(type) {
-				case int64:
-					point.Cache.MaxExpiredTime = strconv.FormatInt(value, 10)
-				case string:
-					point.Cache.MaxExpiredTime = value
-				default:
-					return fmt.Errorf("cannot assign cache attribute [%s] by value[%v] with type [%s]",
-						CacheAttributeMaxExpiredTime, value, reflect.TypeOf(value).Name())
-				}
-			}
-			// FsScope字段赋值
-			if value, ok := cacheMap[CacheAttributeFsScope]; ok {
-				switch value := value.(type) {
-				case string:
-					point.Cache.FsScope = value
-				default:
-					return fmt.Errorf("cannot assign cache attribute [%s] by value[%v] with type [%s]",
-						CacheAttributeFsScope, value, reflect.TypeOf(value).Name())
-				}
-			}
-		}
-	}
 	return nil
 }
 

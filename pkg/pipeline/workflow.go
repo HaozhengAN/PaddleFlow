@@ -19,9 +19,10 @@ package pipeline
 import (
 	"errors"
 	"fmt"
-	. "github.com/PaddlePaddle/PaddleFlow/pkg/pipeline/common"
 	"regexp"
 	"strconv"
+
+	. "github.com/PaddlePaddle/PaddleFlow/pkg/pipeline/common"
 
 	"github.com/sirupsen/logrus"
 
@@ -328,7 +329,7 @@ func (bwf *BaseWorkflow) replaceRunParam(param string, val interface{}) error {
 		- param: 寻找所有step内的parameter，并进行替换，没有则不替换。
 		只检验命令行参数是否存在在 yaml 定义中，不校验是否必须是本次运行的 step
 	*/
-	stepName, paramName := parseParamName(param)
+	stepName, paramName := parseTemplate(param)
 	steps := bwf.parseAllSteps()
 
 	if len(stepName) != 0 {
@@ -417,7 +418,6 @@ func (bwf *BaseWorkflow) checkSteps() error {
 		SysParamNamePFStepName: "",
 		SysParamNamePFFsName:   "",
 		SysParamNamePFUserName: "",
-		SysParamNamePFRuntime:  "",
 	}
 	steps := map[string]*schema.WorkflowSourceStep{}
 	for name, step := range bwf.runtimeSteps {
@@ -543,11 +543,11 @@ type Workflow struct {
 }
 
 type WorkflowCallbacks struct {
-	GetJobCb      func(runID string, stepName string) (schema.JobView, error)
-	UpdateRunCb   func(string, interface{}) bool
-	LogCacheCb    func(req schema.LogRunCacheRequest) (string, error)
-	ListCacheCb   func(firstFp, fsID, step, yamlPath string) ([]models.RunCache, error)
-	LogArtifactCb func(req schema.LogRunArtifactRequest) error
+	GetJobCb        func(cacheJobId string) (schema.JobView, error)
+	UpdateRuntimeCb func(string, interface{}) (int64, bool)
+	LogCacheCb      func(req schema.LogRunCacheRequest) (string, error)
+	ListCacheCb     func(firstFp, fsID, yamlPath string) ([]models.RunCache, error)
+	LogArtifactCb   func(req schema.LogRunArtifactRequest) error
 }
 
 // 实例化一个Workflow，并返回
@@ -590,7 +590,7 @@ func (wf *Workflow) newWorkflowRuntime() error {
 	return nil
 }
 
-func (wf *Workflow) initRuntimeSteps(runtimeSteps map[string]*Step, steps map[string]*schema.WorkflowSourceStep, nodeType NodeType) error {
+func (wf *Workflow) initRuntimeSteps(runtimeSteps map[string]*StepRuntime, steps map[string]*schema.WorkflowSourceStep, nodeType NodeType) error {
 	// 此处topologicalSort不为了校验，而是为了排序，NewStep中会进行参数替换，必须保证上游节点已经替换完毕
 	sortedSteps, err := wf.topologicalSort(steps)
 	if err != nil {
@@ -619,7 +619,7 @@ func (wf *Workflow) SetWorkflowRuntime(runtime schema.RuntimeView, postProcess s
 	return nil
 }
 
-func (wf *Workflow) setRuntimeSteps(runtime map[string]schema.JobView, steps map[string]*Step) {
+func (wf *Workflow) setRuntimeSteps(runtime map[string]schema.JobView, steps map[string]*StepRuntime) {
 	for name, step := range steps {
 		jobView, ok := runtime[name]
 		if !ok {
@@ -627,7 +627,7 @@ func (wf *Workflow) setRuntimeSteps(runtime map[string]schema.JobView, steps map
 		}
 		paddleflowJob := PaddleFlowJob{
 			BaseJob: BaseJob{
-				Id:         jobView.JobID,
+				ID:         jobView.JobID,
 				Name:       jobView.JobName,
 				Command:    jobView.Command,
 				Parameters: jobView.Parameters,
@@ -636,7 +636,6 @@ func (wf *Workflow) setRuntimeSteps(runtime map[string]schema.JobView, steps map
 				StartTime:  jobView.StartTime,
 				EndTime:    jobView.EndTime,
 				Status:     jobView.Status,
-				Deps:       jobView.Deps,
 			},
 			Image: wf.Source.DockerEnv,
 		}
