@@ -49,7 +49,7 @@ type DagView struct {
 	EndTime     string
 	Status      JobStatus
 	Message     string
-	EntryPoints map[string]ComponentView
+	EntryPoints map[string][]ComponentView
 	ParentDagID string
 }
 
