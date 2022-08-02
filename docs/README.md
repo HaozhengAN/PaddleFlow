@@ -4,10 +4,14 @@ Please select the user documentation in your preferred language:
 - [English](en)
 
 ```mermaid
-graph TD
-A[发起申请报销]-->B(组长审核)
-B-->C(根据金额走不同的流程)
-C--> |money<100| D(允许)
-C--> |money>=100| E(失败)
-G[竖向流程图]
+flowchat
+st=>start: 开始框
+op=>operation: 处理框
+cond=>condition: 判断框(Yes/No)
+sub1=>subroutine: 子流程
+io=>inputoutput: 输入输出
+e=>end: 结果
+st->op(right)->cond
+cond(yes)->io(right)->e
+cond(no)->sub1(right)->op
 ```
