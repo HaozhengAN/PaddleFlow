@@ -38,8 +38,10 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/PaddlePaddle/PaddleFlow/cmd/fs/fuse/flag"
+	common_ "github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/client"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/http/api"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/common/http/core"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/base"
@@ -59,9 +61,8 @@ var opts *libfuse.MountOptions
 
 var logConf = logger.LogConfig{
 	Dir:             "./log",
-	FilePrefix:      "./pfs-fuse-" + time.Now().Format(TimeFormat),
 	Level:           "INFO",
-	MaxKeepDays:     90,
+	MaxKeepDays:     3,
 	MaxFileNum:      100,
 	MaxFileSizeInMB: 200 * 1024 * 1024,
 	IsCompress:      true,
@@ -90,6 +91,11 @@ Usage please refer to docs`,
 }
 
 func setup(c *cli.Context) error {
+	if c.String("fs-id") != "" {
+		logConf.FilePrefix = "./pfs-fuse-" + c.String("fs-id")
+	} else {
+		logConf.FilePrefix = "./pfs-fuse-" + time.Now().Format(TimeFormat)
+	}
 	if err := logger.InitStandardFileLogger(&logConf); err != nil {
 		log.Errorf("cmd mount setup() logger.Init err:%v", err)
 		return err
@@ -225,7 +231,7 @@ func mount(c *cli.Context) error {
 	log.Tracef("mount setup VFS")
 	defer func() {
 		if err := recover(); err != nil {
-			log.Errorf("panic err: %v", err)
+			log.Errorf("panic err: %v %s", err, getCurrentGoroutineStack())
 		}
 	}()
 	if err := setup(c); err != nil {
@@ -328,50 +334,70 @@ func InitVFS(c *cli.Context, registry *prometheus.Registry) error {
 			log.Errorf("invalid server: [%s]", server)
 			return fmt.Errorf("invalid server: [%s]", server)
 		}
-		username := c.String("user-name")
-		if username == "" {
-			log.Errorf("invalid username: [%s]", username)
-			return fmt.Errorf("invalid username: [%s]", username)
+		var token string
+		var httpClient *core.PaddleFlowClient
+		fsName, userName, err := utils.GetFsNameAndUserNameByFsID(fsID)
+		httpClient, err = client.NewHttpClient(server, client.DefaultTimeOut)
+		if err != nil {
+			log.Errorf("new http client err: %v", err)
+			return err
 		}
-		password := c.String("password")
-		if password == "" {
-			log.Errorf("invalid password: [%s]", password)
-			return fmt.Errorf("invalid password: [%s]", password)
+		if os.Getenv(common_.PFTokenEnv) != "" {
+			token = os.Getenv(common_.PFTokenEnv)
+		} else {
+			username := c.String("user-name")
+			if username == "" {
+				log.Errorf("invalid username: [%s]", username)
+				return fmt.Errorf("invalid username: [%s]", username)
+			}
+			password := c.String("password")
+			if password == "" {
+				log.Errorf("invalid password: [%s]", password)
+				return fmt.Errorf("invalid password: [%s]", password)
+			}
+			// 获取token
+			login := api.LoginParams{
+				UserName: username,
+				Password: password,
+			}
+			loginResponse, err := api.LoginRequest(login, httpClient)
+			if err != nil {
+				log.Errorf("fuse login failed: %v", err)
+				return err
+			}
+			token = loginResponse.Authorization
 		}
-
-		httpClient, err := client.NewHttpClient(server, client.DefaultTimeOut)
 		if err != nil {
 			return err
 		}
-
-		// 获取token
-		login := api.LoginParams{
-			UserName: username,
-			Password: password,
-		}
-		loginResponse, err := api.LoginRequest(login, httpClient)
-		if err != nil {
-			log.Errorf("fuse login failed: %v", err)
-			return err
-		}
-
-		fuseClient, err := base.NewClient(fsID, httpClient, loginResponse.Authorization)
+		fuseClient, err := base.NewClient(fsID, httpClient, token)
 		if err != nil {
 			log.Errorf("init client with fs[%s] and server[%s] failed: %v", fsID, server, err)
 			return err
 		}
-		fsMeta, err = fuseClient.GetFSMeta()
-		if err != nil {
-			log.Errorf("get fs[%s] meta from pfs server[%s] failed: %v",
-				fsID, server, err)
-			return err
-		}
-		fuseClient.FsName = fsMeta.Name
-		links, err = fuseClient.GetLinks()
-		if err != nil {
-			log.Errorf("get fs[%s] links from pfs server[%s] failed: %v",
-				fsID, server, err)
-			return err
+
+		if c.Bool("sts") {
+			fsMeta.Properties = map[string]string{
+				common.StsServer: server,
+				common.Token:     token,
+				common.FsName:    fsName,
+				common.UserName:  userName,
+			}
+			fsMeta.Name = fsName
+			fsMeta.UfsType = common.BosType
+		} else {
+			fsMeta, err = fuseClient.GetFSMeta()
+			if err != nil {
+				log.Errorf("get fs[%s] meta from pfs server[%s] failed: %v",
+					fsID, server, err)
+				return err
+			}
+			links, err = fuseClient.GetLinks()
+			if err != nil {
+				log.Errorf("get fs[%s] links from pfs server[%s] failed: %v",
+					fsID, server, err)
+				return err
+			}
 		}
 	}
 	m := meta.Config{
@@ -437,4 +463,10 @@ func signalHandle(mp string) {
 			}()
 		}
 	}()
+}
+
+func getCurrentGoroutineStack() string {
+	var buf [4096]byte
+	n := runtime.Stack(buf[:], false)
+	return string(buf[:n])
 }

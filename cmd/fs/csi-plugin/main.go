@@ -24,6 +24,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/PaddlePaddle/PaddleFlow/cmd/fs/csi-plugin/flag"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/csiplugin/controller"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/csiplugin/csiconfig"
@@ -42,7 +43,7 @@ var logConf = logger.LogConfig{
 	Dir:             "./log",
 	FilePrefix:      "./pfs-csi-plugin",
 	Level:           "INFO",
-	MaxKeepDays:     90,
+	MaxKeepDays:     3,
 	MaxFileNum:      100,
 	MaxFileSizeInMB: 200 * 1024 * 1024,
 	IsCompress:      true,
@@ -70,6 +71,8 @@ func init() {
 	}
 	csiconfig.CSIPod = *pod
 	csiconfig.NodeName = pod.Spec.NodeName
+	csiconfig.Token = os.Getenv(common.PFTokenEnv)
+	csiconfig.AESKey = os.Getenv(common.AESEncryptKeyEnv)
 	for i := range pod.Spec.Containers {
 		if pod.Spec.Containers[i].Name == CsiContainerName {
 			csiconfig.MountImage = pod.Spec.Containers[i].Image

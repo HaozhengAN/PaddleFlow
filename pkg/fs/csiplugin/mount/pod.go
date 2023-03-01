@@ -28,6 +28,7 @@ import (
 	k8sCore "k8s.io/api/core/v1"
 	k8sErrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/csiplugin/csiconfig"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/utils"
@@ -69,7 +70,7 @@ func PodUnmount(volumeID string, mountInfo Info) error {
 	}
 	// if mount pod not exists. might be process mount
 	if pod == nil {
-		//log.Infof("PodUnmount: Mount pod %s not exists.", podName)
+		// log.Infof("PodUnmount: Mount pod %s not exists.", podName)
 		return nil
 	}
 
@@ -172,6 +173,36 @@ func createMountPod(k8sClient utils.Client, volumeID string, mountInfo Info) err
 	return nil
 }
 
+func buildMountPodEnv(pod *k8sCore.Pod) {
+	if csiconfig.AESKey != "" {
+		pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, k8sCore.EnvVar{
+			ValueFrom: &k8sCore.EnvVarSource{
+				SecretKeyRef: &k8sCore.SecretKeySelector{
+					LocalObjectReference: k8sCore.LocalObjectReference{
+						Name: common.PFSecretName,
+					},
+					Key: common.AESEncryptKeyEnv,
+				},
+			},
+			Name: common.AESEncryptKeyEnv,
+		})
+	}
+
+	if csiconfig.Token != "" {
+		pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, k8sCore.EnvVar{
+			ValueFrom: &k8sCore.EnvVarSource{
+				SecretKeyRef: &k8sCore.SecretKeySelector{
+					LocalObjectReference: k8sCore.LocalObjectReference{
+						Name: common.PFSecretName,
+					},
+					Key: common.PFTokenEnv,
+				},
+			},
+			Name: common.PFTokenEnv,
+		})
+	}
+}
+
 func buildMountPod(volumeID string, mountInfo Info) (*k8sCore.Pod, error) {
 	pod := csiconfig.GeneratePodTemplate()
 	pod.Name = GeneratePodNameByVolumeID(volumeID)
@@ -184,6 +215,8 @@ func buildMountPod(volumeID string, mountInfo Info) (*k8sCore.Pod, error) {
 	pod.Spec.Volumes = generatePodVolumes(mountInfo.CacheConfig.CacheDir)
 	pod.Spec.Containers[0] = buildMountContainer(baseContainer(pod.Name, mountInfo.PodResource), mountInfo)
 	pod.Spec.Containers[1] = buildCacheWorkerContainer(baseContainer(pod.Name, mountInfo.PodResource), mountInfo)
+
+	buildMountPodEnv(pod)
 
 	// label for pod listing
 	pod.Labels[schema.LabelKeyFsID] = mountInfo.FS.ID
@@ -265,7 +298,7 @@ func getErrContainerLog(K8sClient utils.Client, podName string) (log string, err
 func baseContainer(podName string, podResource k8sCore.ResourceRequirements) k8sCore.Container {
 	isPrivileged := true
 	return k8sCore.Container{
-		//Name:  containerName, to be set at invoker side
+		// Name:  containerName, to be set at invoker side
 		Image: csiconfig.MountImage,
 		SecurityContext: &k8sCore.SecurityContext{
 			Privileged: &isPrivileged,
@@ -306,25 +339,26 @@ func buildMountContainer(mountContainer k8sCore.Container, mountInfo Info) k8sCo
 		},
 	}
 
-	mp := k8sCore.MountPropagationBidirectional
+	mountPropagationBidirectional := k8sCore.MountPropagationBidirectional
+	mountPropagationNone := k8sCore.MountPropagationNone
 	volumeMounts := []k8sCore.VolumeMount{
 		{
 			Name:             VolumesKeyMount,
 			MountPath:        schema.FusePodMntDir,
 			SubPath:          mountInfo.FS.ID,
-			MountPropagation: &mp,
+			MountPropagation: &mountPropagationBidirectional,
 		},
 	}
 	if mountInfo.CacheConfig.CacheDir != "" {
 		dataCacheVM := k8sCore.VolumeMount{
 			Name:             VolumesKeyDataCache,
 			MountPath:        FusePodCachePath + DataCacheDir,
-			MountPropagation: &mp,
+			MountPropagation: &mountPropagationNone,
 		}
 		metaCacheVM := k8sCore.VolumeMount{
 			Name:             VolumesKeyMetaCache,
 			MountPath:        FusePodCachePath + MetaCacheDir,
-			MountPropagation: &mp,
+			MountPropagation: &mountPropagationNone,
 		}
 		volumeMounts = append(volumeMounts, dataCacheVM, metaCacheVM)
 	}
@@ -375,7 +409,7 @@ func buildCacheWorkerContainer(cacheContainer k8sCore.Container, mountInfo Info)
 	cacheContainer.Name = ContainerNameCacheWorker
 	cacheContainer.Command = []string{"sh", "-c", mountInfo.CacheWorkerCmd()}
 	if mountInfo.CacheConfig.CacheDir != "" {
-		mp := k8sCore.MountPropagationBidirectional
+		mp := k8sCore.MountPropagationNone
 		volumeMounts := []k8sCore.VolumeMount{
 			{
 				Name:             VolumesKeyDataCache,

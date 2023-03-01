@@ -3,6 +3,7 @@ package mount
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/common"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/csiplugin/csiconfig"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/utils"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
@@ -58,7 +60,7 @@ func TestKubeRuntimePVAndPVC(t *testing.T) {
 	assert.Nil(t, err)
 	fsCacheBase64 := base64.StdEncoding.EncodeToString(fsCacheStr)
 
-	mountInfo, err := ConstructMountInfo(fsBase64, fsCacheBase64, "target", utils.GetFakeK8sClient(), false)
+	mountInfo, err := ConstructMountInfo("paddleflow-server:8999", fsBase64, fsCacheBase64, "target", utils.GetFakeK8sClient(), false)
 	assert.Nil(t, err)
 	assert.Equal(t, fsBase64, mountInfo.FSBase64Str)
 	assert.Equal(t, fsCache.CacheDir, mountInfo.CacheConfig.CacheDir)
@@ -71,7 +73,7 @@ func TestKubeRuntimePVAndPVC(t *testing.T) {
 	fsCacheStr, err = json.Marshal(fsCache)
 	assert.Nil(t, err)
 	fsCacheBase64 = base64.StdEncoding.EncodeToString(fsCacheStr)
-	mountInfo, err = ConstructMountInfo(fsBase64, fsCacheBase64, "target", utils.GetFakeK8sClient(), false)
+	mountInfo, err = ConstructMountInfo("paddleflow-server:8999", fsBase64, fsCacheBase64, "target", utils.GetFakeK8sClient(), false)
 	assert.Nil(t, err)
 	assert.Equal(t, "", mountInfo.CacheConfig.CacheDir)
 	assert.Equal(t, "", mountInfo.CacheConfig.FsID)
@@ -161,6 +163,29 @@ func TestInfo_MountCmdArgs(t *testing.T) {
 		},
 	}
 
+	bos := model.FileSystem{
+		Model: model.Model{
+			ID:        "fs-root-bos",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		},
+		UserName:      "root",
+		Name:          "bos",
+		Type:          common.BosType,
+		SubPath:       "/supath",
+		ServerAddress: "bj.bcebos.com",
+
+		PropertiesMap: map[string]string{
+			"accessKey": "accessKey",
+			"bucket":    "bucket",
+			"endpoint":  "server_address",
+			"region":    "bj",
+			"secretKey": "secretKey",
+			common.Sts:  "true",
+		},
+	}
+	csiconfig.Token = "test"
+
 	fsInde := model.FileSystem{
 		Model: model.Model{
 			ID:        "fs-root-testfs",
@@ -201,6 +226,24 @@ func TestInfo_MountCmdArgs(t *testing.T) {
 		want   string
 	}{
 		{
+			name: "test-bos",
+			fields: fields{
+				FS:          bos,
+				CacheConfig: fsCache,
+				TargetPath:  targetPath,
+			},
+			want: "/home/paddleflow/pfs-fuse mount --mount-point=/home/paddleflow/mnt/storage --fs-id=fs-root-bos --sts=true --server=paddleflow-server:8999 --block-size=4096 --meta-cache-driver=disk --data-cache-path=/home/paddleflow/pfs-cache/data-cache --meta-cache-path=/home/paddleflow/pfs-cache/meta-cache",
+		},
+		{
+			name: "test-bos-err",
+			fields: fields{
+				FS:          bos,
+				CacheConfig: fsCache,
+				TargetPath:  targetPath,
+			},
+			want: "",
+		},
+		{
 			name: "test-pfs-fuse-pod",
 			fields: fields{
 				FS:          fs,
@@ -211,6 +254,15 @@ func TestInfo_MountCmdArgs(t *testing.T) {
 				fsBase64 + " --block-size=4096 --meta-cache-driver=disk --file-mode=0644 --dir-mode=0755 " +
 				"--data-cache-path=" + FusePodCachePath + DataCacheDir + " " +
 				"--meta-cache-path=" + FusePodCachePath + MetaCacheDir,
+		},
+		{
+			name: "test-fscache64-error",
+			fields: fields{
+				FS:          fs,
+				CacheConfig: fsCache,
+				TargetPath:  targetPath,
+			},
+			want: "",
 		},
 		{
 			name: "test-pfs-fuse-independent",
@@ -247,7 +299,16 @@ func TestInfo_MountCmdArgs(t *testing.T) {
 				FS:         afs,
 				TargetPath: targetPath,
 			},
-			want: "/home/paddleflow/afs_mount --username=root --password=xxx afs://xxxx.afs.baidu.com:8806/abc " + sourcePath,
+			want: "/home/paddleflow/afs.sh --username=root --password=xxx --conf=/home/paddleflow/afs_mount.conf " + sourcePath + " afs://xxxx.afs.baidu.com:8806/abc",
+		},
+		{
+			name: "test-afs-mount-readonly",
+			fields: fields{
+				FS:         afs,
+				TargetPath: targetPath,
+				ReadOnly:   true,
+			},
+			want: "/home/paddleflow/afs.sh -r --username=root --password=xxx --conf=/home/paddleflow/afs_mount.conf " + sourcePath + " afs://xxxx.afs.baidu.com:8806/abc",
 		},
 		{
 			name: "test-pfs-fuse-no-cache",
@@ -275,20 +336,43 @@ func TestInfo_MountCmdArgs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fsStr, err := json.Marshal(tt.fields.FS)
-			assert.Nil(t, err)
-			fsBase64 := base64.StdEncoding.EncodeToString(fsStr)
+			if tt.name == "test-bos-err" {
+				csiconfig.Token = ""
+				fsStr, err := json.Marshal(tt.fields.FS)
+				assert.Nil(t, err)
+				fsBase64 := base64.StdEncoding.EncodeToString(fsStr)
 
-			fsCacheStr, err := json.Marshal(tt.fields.CacheConfig)
-			assert.Nil(t, err)
-			fsCacheBase64 := base64.StdEncoding.EncodeToString(fsCacheStr)
+				fsCacheStr, err := json.Marshal(tt.fields.CacheConfig)
+				assert.Nil(t, err)
+				fsCacheBase64 := base64.StdEncoding.EncodeToString(fsCacheStr)
 
-			mountInfo, err := ConstructMountInfo(fsBase64, fsCacheBase64, tt.fields.TargetPath, utils.GetFakeK8sClient(), tt.fields.ReadOnly)
-			assert.Nil(t, err)
+				_, err = ConstructMountInfo("paddleflow-server:8999", fsBase64, fsCacheBase64, tt.fields.TargetPath, utils.GetFakeK8sClient(), tt.fields.ReadOnly)
+				assert.NotNil(t, err, "csi paddleflow server token not set")
+			} else if tt.name == "test-fscache64-error" {
+				fsStr, err := json.Marshal(tt.fields.FS)
+				assert.Nil(t, err)
+				fsBase64 := base64.StdEncoding.EncodeToString(fsStr)
 
-			got := mountInfo.Cmd + " " + strings.Join(mountInfo.Args, " ")
-			if got != tt.want {
-				t.Errorf("cmdAndArgs() = %v, want %v", got, tt.want)
+				fsCacheBase64 := "xxxxxx"
+
+				_, err = ConstructMountInfo("paddleflow-server:8999", fsBase64, fsCacheBase64, tt.fields.TargetPath, utils.GetFakeK8sClient(), tt.fields.ReadOnly)
+				assert.NotNil(t, err, fmt.Errorf("FS process FS CacheConfig err: illegal base64 data at input byte 4"))
+			} else {
+				fsStr, err := json.Marshal(tt.fields.FS)
+				assert.Nil(t, err)
+				fsBase64 := base64.StdEncoding.EncodeToString(fsStr)
+
+				fsCacheStr, err := json.Marshal(tt.fields.CacheConfig)
+				assert.Nil(t, err)
+				fsCacheBase64 := base64.StdEncoding.EncodeToString(fsCacheStr)
+
+				mountInfo, err := ConstructMountInfo("paddleflow-server:8999", fsBase64, fsCacheBase64, tt.fields.TargetPath, utils.GetFakeK8sClient(), tt.fields.ReadOnly)
+				assert.Nil(t, err)
+
+				got := mountInfo.Cmd + " " + strings.Join(mountInfo.Args, " ")
+				if got != tt.want {
+					t.Errorf("cmdAndArgs() = %v, want %v", got, tt.want)
+				}
 			}
 		})
 	}

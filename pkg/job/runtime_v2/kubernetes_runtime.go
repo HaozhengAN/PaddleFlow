@@ -440,6 +440,7 @@ func (kr *KubeRuntime) buildPV(pv *corev1.PersistentVolume, fsID string) error {
 	pv.Spec.CSI.VolumeHandle = pv.Name
 	pv.Spec.CSI.VolumeAttributes[pfschema.PFSID] = fsID
 	pv.Spec.CSI.VolumeAttributes[pfschema.PFSClusterID] = kr.cluster.ID
+	pv.Spec.CSI.VolumeAttributes[pfschema.PFSServer] = config.GetServiceAddress()
 	pv.Spec.CSI.VolumeAttributes[pfschema.PFSInfo] = base64.StdEncoding.EncodeToString(fsStr)
 	pv.Spec.CSI.VolumeAttributes[pfschema.PFSCache] = base64.StdEncoding.EncodeToString(fsCacheConfigStr)
 	return nil
@@ -649,7 +650,7 @@ func formatAllEventLogs(events []corev1.Event, logPage utils.LogPage) []string {
 	})
 	var formatedEvents []string
 	for _, event := range events {
-		//Type-Reason-Timestamp-Message
+		// Type-Reason-Timestamp-Message
 		str := fmt.Sprintf("type: %s\treason: %s\teventsTime: %s \tmessage: %s",
 			event.Type, event.Reason, event.CreationTimestamp.Format("2006-01-02 15:04:05"), event.Message)
 		formatedEvents = append(formatedEvents, str)
@@ -661,6 +662,22 @@ func formatAllEventLogs(events []corev1.Event, logPage utils.LogPage) []string {
 func (kr *KubeRuntime) clientset() kubernetes.Interface {
 	kubeClient := kr.kubeClient.(*client.KubeRuntimeClient)
 	return kubeClient.Client
+}
+
+// CreateNamespace Create namespace if not exist
+func (kr *KubeRuntime) CreateNamespace(namespace string, opts metav1.CreateOptions) (*corev1.Namespace, error) {
+	coreNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespace,
+		},
+	}
+	ns, err := kr.clientset().CoreV1().Namespaces().Get(context.TODO(), namespace, metav1.GetOptions{})
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return nil, err
+	} else if ns != nil && err == nil {
+		return ns, nil
+	}
+	return kr.clientset().CoreV1().Namespaces().Create(context.TODO(), coreNs, opts)
 }
 
 func (kr *KubeRuntime) ListNamespaces(listOptions metav1.ListOptions) (*corev1.NamespaceList, error) {
@@ -732,7 +749,11 @@ func (kr *KubeRuntime) listNodes(listOptions metav1.ListOptions) (*corev1.NodeLi
 }
 
 func (kr *KubeRuntime) ListPods(namespace string, listOptions metav1.ListOptions) (*corev1.PodList, error) {
-	return kr.clientset().CoreV1().Pods(namespace).List(context.TODO(), listOptions)
+	return listPods(kr.clientset(), namespace, listOptions)
+}
+
+func listPods(client kubernetes.Interface, namespace string, listOptions metav1.ListOptions) (*corev1.PodList, error) {
+	return client.CoreV1().Pods(namespace).List(context.TODO(), listOptions)
 }
 
 func (kr *KubeRuntime) DeletePod(namespace, name string) error {

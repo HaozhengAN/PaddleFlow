@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/ufs"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/common"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/csiplugin/csiconfig"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/csiplugin/mount"
@@ -75,8 +76,8 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context,
 		return nil, err
 	}
 
-	mountInfo, err := mount.ConstructMountInfo(volumeContext[schema.PFSInfo], volumeContext[schema.PFSCache],
-		targetPath, k8sClient, req.GetReadonly())
+	mountInfo, err := mount.ConstructMountInfo(volumeContext[schema.PFSServer], volumeContext[schema.PFSInfo], volumeContext[schema.PFSCache],
+		targetPath, k8sClient, req.GetReadonly() || req.VolumeCapability.AccessMode.GetMode() == csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY)
 	if err != nil {
 		log.Errorf("ConstructMountInfo err: %v", err)
 		return nil, status.Error(codes.Internal, err.Error())
@@ -134,7 +135,7 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context,
 
 func mountVolume(volumeID string, mountInfo mount.Info) error {
 	log.Infof("mountVolume: indepedentMp:%t, readOnly:%t", mountInfo.FS.IndependentMountProcess, mountInfo.ReadOnly)
-	if !mountInfo.FS.IndependentMountProcess && mountInfo.FS.Type != common.GlusterFSType && mountInfo.FS.Type != common.CFSType {
+	if !mountInfo.FS.IndependentMountProcess && mountInfo.FS.Type != common.GlusterFSType && mountInfo.FS.Type != common.CFSType && mountInfo.FS.Type != common.AFSType {
 		// business pods use a separate source path
 		if err := mount.PFSMount(volumeID, mountInfo); err != nil {
 			log.Errorf("MountThroughPod err: %v", err)
@@ -147,6 +148,21 @@ func mountVolume(volumeID string, mountInfo mount.Info) error {
 				mountInfo.FS.ID, mountInfo.SourcePath, err)
 			log.Error(err.Error())
 			return err
+		}
+		if mountInfo.FS.Type == common.CFSType {
+			properties := make(map[string]interface{})
+			for k, v := range mountInfo.FS.PropertiesMap {
+				properties[k] = v
+			}
+			properties[common.Type] = common.CFSType
+			properties[common.SubPath] = mountInfo.FS.SubPath
+			properties[common.Address] = mountInfo.FS.ServerAddress
+			// mkdir not exist dir for cfs
+			_, err := ufs.NewLocalMountFileSystem(properties)
+			if err != nil {
+				log.Errorf("NewLocalMountFileSystem err: %v", err)
+				return err
+			}
 		}
 		log.Infof("mount with cmd %s and args %v", mountInfo.Cmd, mountInfo.Args)
 		output, err := utils.ExecCmdWithTimeout(mountInfo.Cmd, mountInfo.Args)
@@ -165,6 +181,7 @@ func mountVolume(volumeID string, mountInfo mount.Info) error {
 	return nil
 }
 
+// bindMountVolume bind source path to target path
 func bindMountVolume(sourcePath, mountPath string, readOnly bool) error {
 	log.Infof("bindMountVolume source[%s] target[%s]", sourcePath, mountPath)
 	if err := os.MkdirAll(mountPath, 0750); err != nil {

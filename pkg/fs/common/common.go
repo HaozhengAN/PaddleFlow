@@ -26,6 +26,7 @@ const (
 	CFSType              = "cfs"
 	GlusterFSType        = "glusterfs"
 	AFSType              = "afs"
+	BosType              = "bos"
 
 	// common
 	Owner = "owner"
@@ -41,6 +42,15 @@ const (
 	UserKey         = "user"
 	BlockSizeKey    = "blockSize"
 	ReplicationKey  = "replication"
+
+	Sts             = "sts"
+	StsServer       = "stsServer"
+	Token           = "token"
+	FsName          = "fsname"
+	UserName        = "userName"
+	StsDuration     = "duration"
+	StsACL          = "acl"
+	BosSessionToken = "sessionToken"
 
 	// AFS properties
 	AFSUser     = "username"

@@ -118,7 +118,7 @@ func TestPFSMountWithCache(t *testing.T) {
 	assert.Nil(t, err)
 	fsCacheBase64 := base64.StdEncoding.EncodeToString(fsCacheStr)
 
-	info, err := ConstructMountInfo(fsBase64, fsCacheBase64, testTargetPath, fakeClientSet, false)
+	info, err := ConstructMountInfo("paddleflow-server:8999", fsBase64, fsCacheBase64, testTargetPath, fakeClientSet, false)
 	assert.Nil(t, err)
 
 	patch1 := ApplyFunc(isPodReady, func(pod *k8sCore.Pod) bool {
@@ -222,6 +222,34 @@ func Test_addRef(t *testing.T) {
 				t.Errorf("pod annotions nums not correct () got = %v, wantAnnotation = %v", newPod, tt.wantAnno)
 			}
 
+		})
+	}
+}
+
+func Test_buildMountPodEnv(t *testing.T) {
+	type args struct {
+		pod *k8sCore.Pod
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{
+			name: "secret-test",
+			args: args{
+				&k8sCore.Pod{
+					Spec: k8sCore.PodSpec{
+						Containers: append([]k8sCore.Container{}, k8sCore.Container{}),
+					},
+				},
+			},
+		},
+	}
+	csiconfig.Token = "1"
+	csiconfig.AESKey = "abc"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			buildMountPodEnv(tt.args.pod)
 		})
 	}
 }
