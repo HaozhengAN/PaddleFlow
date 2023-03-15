@@ -561,6 +561,9 @@ func (s *FileSystemService) SessionToken(username, fsName string) (*GetStsRespon
 	if modelsFs.Type != fsCommon.BosType {
 		log.Errorf("modefsType error %s", modelsFs.Type)
 		return nil, fmt.Errorf("sts must bos type")
+	} else if modelsFs.PropertiesMap[fsCommon.Sts] != "true" {
+		log.Errorf("bos[%v] do not support sts when it was created", modelsFs.Name)
+		return nil, fmt.Errorf("sts not allowed")
 	}
 	properties := modelsFs.PropertiesMap
 	ak := properties[fsCommon.AccessKey]
@@ -570,7 +573,13 @@ func (s *FileSystemService) SessionToken(username, fsName string) (*GetStsRespon
 	if duration_ == "" {
 		duration_ = util.StsDurationDefault
 	}
-	duration, _ := strconv.Atoi(duration_)
+	duration, err := strconv.Atoi(duration_)
+	if err != nil {
+		return nil, err
+	}
+	if duration < 60 || duration > 129600 {
+		return nil, fmt.Errorf("duration must be in [60,129600]")
+	}
 	acl := properties[fsCommon.StsACL]
 	subpath := modelsFs.SubPath
 	subpath = formatSubpath(subpath)
